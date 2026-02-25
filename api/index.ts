@@ -1,6 +1,5 @@
 import "dotenv/config";
 import express from "express";
-import { createServer as createViteServer } from "vite";
 import admin from "firebase-admin";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -151,14 +150,14 @@ async function startServer() {
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
-  } else {
-    // In production, serve static files
-    // Note: Vercel usually handles this via vercel.json, but this is a fallback
+  } else if (!process.env.VERCEL) {
+    // In production (but not Vercel), serve static files
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
