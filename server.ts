@@ -31,102 +31,102 @@ const db = admin.apps.length ? admin.database() : null;
 // Mock storage if Firebase is not configured
 let mockRegistrations: any[] = [];
 
+const app = express();
+app.use(express.json());
+
+// Admin Auth Middleware (Simple Token)
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123";
+let activeSessions = new Set<string>();
+
+// Registration Endpoint
+app.post("/api/register", async (req, res) => {
+  try {
+    const { name, semester, section, branch, degree } = req.body;
+
+    if (!name || !semester || !section || !branch || !degree) {
+      return res.status(400).json({ error: "All fields are required" });
+    }
+
+    const registration = {
+      name,
+      semester,
+      section,
+      branch,
+      degree,
+      createdAt: new Date().toISOString(),
+    };
+
+    if (db) {
+      await db.ref("registrations").push(registration);
+    } else {
+      mockRegistrations.push({ id: Math.random().toString(36).substr(2, 9), ...registration });
+    }
+
+    res.json({ success: true, message: "Registration successful" });
+  } catch (error) {
+    console.error("Registration error:", error);
+    res.status(500).json({ error: "Failed to save registration" });
+  }
+});
+
+// Admin Login
+app.post("/api/admin/login", (req, res) => {
+  const { password } = req.body;
+  if (password === ADMIN_PASSWORD) {
+    const token = crypto.randomBytes(32).toString("hex");
+    activeSessions.add(token);
+    res.json({ success: true, token });
+  } else {
+    res.status(401).json({ error: "Invalid password" });
+  }
+});
+
+// Admin: Get Registrations
+app.get("/api/admin/registrations", async (req, res) => {
+  const token = req.headers.authorization;
+  if (!token || !activeSessions.has(token)) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  try {
+    if (db) {
+      const snapshot = await db.ref("registrations").once("value");
+      const data = snapshot.val();
+      const registrationsList = data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : [];
+      res.json(registrationsList.reverse());
+    } else {
+      res.json([...mockRegistrations].reverse());
+    }
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch registrations" });
+  }
+});
+
+// Admin: Delete Registration
+app.delete("/api/admin/registrations/:id", async (req, res) => {
+  const token = req.headers.authorization;
+  if (!token || !activeSessions.has(token)) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  const { id } = req.params;
+  try {
+    if (db) {
+      await db.ref(`registrations/${id}`).remove();
+    } else {
+      mockRegistrations = mockRegistrations.filter(r => r.id !== id);
+    }
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to delete registration" });
+  }
+});
+
 async function startServer() {
-  const app = express();
   const PORT = 3000;
 
-  app.use(express.json());
-
-  // Admin Auth Middleware (Simple Token)
-  const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123";
-  let activeSessions = new Set<string>();
-
-  // Registration Endpoint
-  app.post("/api/register", async (req, res) => {
-    try {
-      const { name, semester, section, branch, degree } = req.body;
-
-      if (!name || !semester || !section || !branch || !degree) {
-        return res.status(400).json({ error: "All fields are required" });
-      }
-
-      const registration = {
-        name,
-        semester,
-        section,
-        branch,
-        degree,
-        createdAt: new Date().toISOString(),
-      };
-
-      if (db) {
-        await db.ref("registrations").push(registration);
-      } else {
-        mockRegistrations.push({ id: Math.random().toString(36).substr(2, 9), ...registration });
-      }
-
-      res.json({ success: true, message: "Registration successful" });
-    } catch (error) {
-      console.error("Registration error:", error);
-      res.status(500).json({ error: "Failed to save registration" });
-    }
-  });
-
-  // Admin Login
-  app.post("/api/admin/login", (req, res) => {
-    const { password } = req.body;
-    if (password === ADMIN_PASSWORD) {
-      const token = crypto.randomBytes(32).toString("hex");
-      activeSessions.add(token);
-      res.json({ success: true, token });
-    } else {
-      res.status(401).json({ error: "Invalid password" });
-    }
-  });
-
-  // Admin: Get Registrations
-  app.get("/api/admin/registrations", async (req, res) => {
-    const token = req.headers.authorization;
-    if (!token || !activeSessions.has(token)) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    try {
-      if (db) {
-        const snapshot = await db.ref("registrations").once("value");
-        const data = snapshot.val();
-        const registrationsList = data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : [];
-        res.json(registrationsList.reverse());
-      } else {
-        res.json([...mockRegistrations].reverse());
-      }
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch registrations" });
-    }
-  });
-
-  // Admin: Delete Registration
-  app.delete("/api/admin/registrations/:id", async (req, res) => {
-    const token = req.headers.authorization;
-    if (!token || !activeSessions.has(token)) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    const { id } = req.params;
-    try {
-      if (db) {
-        await db.ref(`registrations/${id}`).remove();
-      } else {
-        mockRegistrations = mockRegistrations.filter(r => r.id !== id);
-      }
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: "Failed to delete registration" });
-    }
-  });
-
   // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
+  if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
@@ -139,9 +139,13 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
+  if (!process.env.VERCEL) {
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on http://localhost:${PORT}`);
+    });
+  }
 }
 
 startServer();
+
+export default app;
