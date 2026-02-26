@@ -20,7 +20,8 @@ import {
   LayoutDashboard,
   Menu,
   X,
-  Lock
+  Lock,
+  Download
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -138,6 +139,11 @@ export default function App() {
     } catch (err) {
       console.error("Delete failed", err);
     }
+  };
+  
+  const handleDownload = () => {
+    if (!adminToken) return;
+    window.open(`/api/admin/download?token=${adminToken}`, '_blank');
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -555,6 +561,13 @@ export default function App() {
                   <Users className="w-5 h-5" />
                   <span className="font-bold">{registrations.length}</span>
                 </div>
+                <button
+                  onClick={handleDownload}
+                  className="flex items-center gap-2 px-4 py-3 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400 hover:bg-purple-500/20 transition-all font-bold text-sm"
+                >
+                  <Download className="w-5 h-5" />
+                  Download Details
+                </button>
               </div>
             </div>
 

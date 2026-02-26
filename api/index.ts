@@ -4,6 +4,7 @@ import admin from "firebase-admin";
 import path from "path";
 import { fileURLToPath } from "url";
 import crypto from "crypto";
+import ExcelJS from "exceljs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -137,6 +138,69 @@ app.delete("/api/admin/registrations/:id", async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: "Failed to delete registration" });
+  }
+});
+
+// Admin: Download Excel
+app.get("/api/admin/download", async (req, res) => {
+  const token = req.query.token as string;
+  if (!token || !activeSessions.has(token)) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  try {
+    let registrationsList: any[] = [];
+    const db = getDb();
+    if (db) {
+      const snapshot = await db.ref("registrations").once("value");
+      const data = snapshot.val();
+      registrationsList = data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : [];
+    } else {
+      registrationsList = [...mockRegistrations];
+    }
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("Registrations");
+
+    worksheet.columns = [
+      { header: "ID", key: "id", width: 25 },
+      { header: "Name", key: "name", width: 30 },
+      { header: "Semester", key: "semester", width: 10 },
+      { header: "Section", key: "section", width: 10 },
+      { header: "Branch", key: "branch", width: 25 },
+      { header: "Degree", key: "degree", width: 20 },
+      { header: "Registered At", key: "createdAt", width: 25 },
+    ];
+
+    // Style the header row
+    worksheet.getRow(1).font = { bold: true };
+    worksheet.getRow(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFE0E0E0' }
+    };
+
+    registrationsList.reverse().forEach(reg => {
+      worksheet.addRow({
+        ...reg,
+        createdAt: new Date(reg.createdAt).toLocaleString()
+      });
+    });
+
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+    res.setHeader(
+      "Content-Disposition",
+      "attachment; filename=" + "Webinar_Registrations.xlsx"
+    );
+
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    console.error("Download error:", error);
+    res.status(500).json({ error: "Failed to generate Excel file" });
   }
 });
 
